@@ -1,0 +1,150 @@
+// Creating instances for Twitter authentication
+var twitter = TwitterWebService.getInstance(
+  'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx', // API Key
+  'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx' // API secret key
+);
+
+// Linking the app to Twitter for authentication
+function authorize() {
+  twitter.authorize();
+}
+
+// Deauthentication
+function reset() {
+  twitter.reset();
+}
+ 
+// Post-authentication callback
+function authCallback(request) {
+  return twitter.authCallback(request);
+}
+
+function saveImage() {
+
+  var folderId = 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'; // Destination Google Drive ID
+  var today = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'YYYY-MM-dd');
+
+   var requestUrl = 'https://api.screenshotone.com/take?access_key=XXXXXXXXXXXXXXXX&url=https%3A%2F%2Fscript.google.com%2Fmacros%2Fs%2FAKfycbwX9hfPhqntsaSCggTFwyThi_ZGiDDDHgj8_7WOYTGKCc4H2ZbLlSy_5B-RA685I5txd6Q%2Fexec&full_page=false&viewport_width=340&viewport_height=470&device_scale_factor=3&format=webp&image_quality=100&block_ads=true&block_cookie_banners=true&block_banners_by_heuristics=false&block_trackers=true&delay=30&timeout=60';
+  
+
+  try {
+    UrlFetchApp.fetch(requestUrl); // Fetching and having images made.
+    Utilities.sleep(1000 * 60); // Wait until the image is ready   *1 second = 1000 ms
+    var image = UrlFetchApp.fetch(requestUrl).getBlob(); // Download
+    var folder = DriveApp.getFolderById(folderId);
+    // folder.createFile(image).setName(today);
+    var file = folder.createFile(image).setName(today + ".webp");
+
+    // Upload to Cloudinary
+    // var cloudinaryUrl = 'https://api.cloudinary.com/v1_1/your_cloud_name/image/upload'; 
+    var cloudinaryUrl = 'https://api.cloudinary.com/v1_1/your_cloud_name/image/upload';// Replace your_cloud_name
+    var postData = {
+      'file': 'data:image/webp;base64,' + Utilities.base64Encode(image.getBytes()),
+      'upload_preset': 'xxxxxxxxxxxx' // Set upload presets.
+    };
+    var options = {
+      'method': 'post',
+      'payload': postData,
+      'muteHttpExceptions': true
+    };
+    var response = UrlFetchApp.fetch(cloudinaryUrl, options);
+    Logger.log(response.getContentText()); // Log the entire response.
+    var jsonResponse = JSON.parse(response.getContentText());
+
+    if (jsonResponse.error) {
+      Logger.log(jsonResponse.error.message); // Output error messages if any.
+    }
+
+    var publicId = jsonResponse.public_id; //Get the public ID of the image after uploading.
+    console.log("Upload complete: Public ID = " + publicId);
+
+    // cropping parameter
+    var cropX = 0; // X-coordinate of the crop start point
+    var cropY = 253; // Y-coordinate of the crop start point
+    var cropWidth = 1120; // Width to crop
+    var cropHeight = 1159; // Cropping height
+
+  // Building URLs for cropped images.
+  var croppedImageUrl = buildCroppedImageUrl(publicId, cropX, cropY, cropWidth, cropHeight);
+
+  console.log(croppedImageUrl);
+
+  postTweetWithMedia(croppedImageUrl); // Post to Twitter
+
+
+
+
+  } catch (e) {
+    // Browser.msgBox(e);
+    Logger.log(e.message); // Log error messages in the log.
+  }
+}
+
+
+// Function to construct URLs for cropped images.
+function buildCroppedImageUrl(publicId, x, y, width, height) {
+  var cloudName = "YOUR_CLOUD_NAME";
+  return `https://res.cloudinary.com/${cloudName}/image/upload/c_crop,x_${x},y_${y},w_${width},h_${height}/${publicId}.jpg`;
+}
+
+// Function to upload an image and obtain a media ID.
+function uploadMedia(imageBlob) {
+  var service = twitter.getService(); // Get Twitter's authentication service.
+  var endPointUrl = 'https://upload.twitter.com/1.1/media/upload.json';
+
+  // Encoding image data.
+  var base64Image = Utilities.base64Encode(imageBlob.getBytes());
+  var data = {
+    media_data: base64Image
+  };
+
+  var options = {
+    method: 'post',
+    contentType: 'application/x-www-form-urlencoded',
+    payload: data,
+    muteHttpExceptions: true
+  };
+
+  var response = JSON.parse(service.fetch(endPointUrl, options));
+  return response.media_id_string; // Return media ID
+}
+
+// Post a tweet with image
+function postTweetWithMedia(croppedImageUrl) {
+  var imageBlob = UrlFetchApp.fetch(croppedImageUrl).getBlob(); // Get cropped images from Cloudinary
+
+  // Upload an image and get a media ID.
+  var mediaId = uploadMedia(imageBlob);
+  if (!mediaId) {
+    console.log('Image upload failed.');
+    return;
+  }
+
+  // Create tweet body
+  var service = twitter.getService(); // Get Twitter's authentication service.
+  var endPointUrl = 'https://api.twitter.com/2/tweets';
+  var message = {
+    text: "Text of some kind",
+    media: {
+      media_ids: [mediaId] // Media ID attached
+    }
+  };
+
+  var options = {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify(message),
+    muteHttpExceptions: true
+  };
+
+  var response = JSON.parse(service.fetch(endPointUrl, options));
+  console.log(response);
+}
+
+
+
+
+
+
+
+
